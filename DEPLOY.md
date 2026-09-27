@@ -43,6 +43,12 @@ Once it's created, open its **General** tab and copy the **Internal Connection U
 external one — that's for connecting a desktop client, and routes through the public internet
 unnecessarily for the app itself). You'll paste it as `DATABASE_URL` in step 3.
 
+**Do not reuse this repo's own `DATABASE_URL`** from `.env`/`.env.example` (the `localhost:5433`
+value) — that's the local-only dev Postgres from the root [`docker-compose.yml`](docker-compose.yml),
+which does not exist on your Dokploy server. Inside a container, `localhost` always means the
+container itself, so that value can never reach a real database in production; the api container's
+entrypoint now refuses to start rather than guess what you meant.
+
 ## 2. Create the Compose application
 
 **Project → Create → Application → Docker Compose** (or add it to the same project as the

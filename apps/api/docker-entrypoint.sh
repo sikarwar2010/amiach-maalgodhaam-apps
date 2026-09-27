@@ -12,9 +12,9 @@
 # against an empty database too) while every real query fails with Prisma error P2021
 # ("The table `...` does not exist in the current database").
 #
-# If migrations fail (e.g. the database isn't reachable yet), this script exits non-zero and the
-# container exits; Docker's `restart: unless-stopped` retries it. The API must never start serving
-# requests against an unmigrated schema.
+# If migrations still fail after MAX_ATTEMPTS below, this script exits non-zero and the container
+# exits; Docker's `restart: unless-stopped` retries the whole container. The API must never start
+# serving requests against an unmigrated schema.
 set -e
 
 if [ -z "${DATABASE_URL:-}" ]; then
@@ -37,14 +37,26 @@ db_host() {
   esac
 }
 
-# `.env` uses localhost so host-side tools can reach the published Postgres port.
-# Inside this container, localhost is the container itself (P1001). The host gateway
-# is host.docker.internal (Docker Desktop, or extra_hosts host-gateway on Linux).
+# FAIL LOUD, do not silently "fix" this: every `localhost`/`127.0.0.1` database URL in this repo is the
+# LOCAL DEV Postgres (docker-compose.yml — explicitly commented "Never point production at this", port
+# 5433; .env.example's DATABASE_URL uses exactly this value). Inside ANY container, "localhost" always
+# means the container itself, so a value like this can never be a valid production target — it means
+# DATABASE_URL in Dokploy's Environment tab was set to a local/dev connection string instead of the
+# real database's Internal Connection URL (see DEPLOY.md step 1). An earlier version of this script
+# rewrote it to host.docker.internal automatically; that masked the misconfiguration as a networking
+# problem instead of surfacing it, and host.docker.internal is not a generic production fix — Dokploy's
+# actual database (its own managed Postgres, or an external one) has its own real hostname on
+# dokploy-network, not the developer's machine. If you genuinely need this container to reach a
+# host-side Postgres for local testing, set DATABASE_URL to host.docker.internal yourself; this script
+# will not guess it for you.
 case "$DATABASE_URL" in
   *@localhost:*|*@localhost/*|*@127.0.0.1:*|*@127.0.0.1/*)
-    DATABASE_URL=$(printf '%s' "$DATABASE_URL" | sed -E 's#@(localhost|127\.0\.0\.1)#@host.docker.internal#')
-    export DATABASE_URL
-    echo "[entrypoint] rewrote database host localhost -> host.docker.internal (localhost is this container)"
+    echo "[entrypoint] DATABASE_URL points at $(db_host "$DATABASE_URL") — refusing to start." >&2
+    echo "[entrypoint] this is the LOCAL DEV database's address (see docker-compose.yml / .env.example)," >&2
+    echo "[entrypoint] not a valid target inside any container, including this one." >&2
+    echo "[entrypoint] fix: in Dokploy's Environment tab, set DATABASE_URL to your actual production" >&2
+    echo "[entrypoint] database's Internal Connection URL (DEPLOY.md step 1) — not a localhost value." >&2
+    exit 1
     ;;
 esac
 
@@ -60,8 +72,22 @@ export DATABASE_URL
 
 echo "[entrypoint] database target: $(db_host "$DATABASE_URL")"
 
-echo "[entrypoint] applying database migrations (prisma migrate deploy)..."
-bun run db:deploy
+# Bounded retry for TRANSIENT startup races only (e.g. a freshly-created Dokploy database resource
+# that isn't accepting connections yet on the very first deploy). `prisma migrate deploy` is safe to
+# retry — it is idempotent. This is not a way to paper over a genuinely wrong DATABASE_URL: that fails
+# identically every attempt and this still exits non-zero, loudly, once attempts are exhausted.
+MAX_ATTEMPTS=5
+attempt=1
+until bun run db:deploy; do
+  if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+    echo "[entrypoint] migrations failed after $MAX_ATTEMPTS attempts against $(db_host "$DATABASE_URL") — giving up." >&2
+    exit 1
+  fi
+  wait_s=$((attempt * 3))
+  echo "[entrypoint] migration attempt $attempt/$MAX_ATTEMPTS failed; retrying in ${wait_s}s..." >&2
+  sleep "$wait_s"
+  attempt=$((attempt + 1))
+done
 
 # Fail closed if migrate deploy somehow exited 0 without creating the core tables (empty/wrong DB).
 echo "[entrypoint] verifying schema (Category/Vendor/Product)..."
