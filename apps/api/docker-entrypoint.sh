@@ -22,6 +22,34 @@ if [ -z "${DATABASE_URL:-}" ]; then
   exit 1
 fi
 
+# Log only host and port — never the user, password, or full URL.
+db_host() {
+  case "$1" in
+    *@*)
+      target=${1##*@}
+      target=${target%%\?*}
+      target=${target%%/*}
+      printf '%s' "$target"
+      ;;
+    *)
+      printf '%s' "unknown"
+      ;;
+  esac
+}
+
+# `.env` uses localhost so host-side tools can reach the published Postgres port.
+# Inside this container, localhost is the container itself (P1001). The host gateway
+# is host.docker.internal (Docker Desktop, or extra_hosts host-gateway on Linux).
+case "$DATABASE_URL" in
+  *@localhost:*|*@localhost/*|*@127.0.0.1:*|*@127.0.0.1/*)
+    DATABASE_URL=$(printf '%s' "$DATABASE_URL" | sed -E 's#@(localhost|127\.0\.0\.1)#@host.docker.internal#')
+    export DATABASE_URL
+    echo "[entrypoint] rewrote database host localhost -> host.docker.internal (localhost is this container)"
+    ;;
+esac
+
+echo "[entrypoint] database target: $(db_host "$DATABASE_URL")"
+
 echo "[entrypoint] applying database migrations (prisma migrate deploy)..."
 bun run db:deploy
 

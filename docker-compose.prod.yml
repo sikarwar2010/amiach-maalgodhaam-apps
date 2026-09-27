@@ -43,14 +43,24 @@ services:
     networks:
       - default
       - dokploy-network
+    # localhost in DATABASE_URL is this container, not Postgres. The entrypoint rewrites that
+    # host to host.docker.internal; host-gateway makes the name exist on Linux as well as Desktop.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - 4100
+    # The entrypoint applies migrations before anything listens on 4100. Probes during
+    # start_period do not count as failures. timeout must stay above wget -T.
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4100/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -T 10 -O /dev/null \"http://127.0.0.1:$${API_PORT:-4100}/api/health\"",
+        ]
+      interval: 10s
+      timeout: 15s
+      retries: 6
+      start_period: 120s
 
   web:
     build:

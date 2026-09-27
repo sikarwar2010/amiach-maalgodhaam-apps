@@ -25,10 +25,12 @@ const app = createApp({
   storage: createLocalStorage(env.UPLOAD_DIR),
 })
 
-console.log(`API listening on http://0.0.0.0:${env.API_PORT}`)
-
-export default {
+// Bind explicitly. Relying on Bun's default-export server can exit immediately when the bundle is not
+// detected as an entrypoint, and Docker's HOSTNAME (the container id) must not become the bind address.
+const server = Bun.serve({
   port: env.API_PORT,
   hostname: "0.0.0.0",
   fetch: app.fetch,
-}
+})
+
+console.log(`API listening on http://${server.hostname}:${server.port}`)

@@ -45,7 +45,8 @@ ARG API_PORT=4100
 ENV API_PORT=${API_PORT}
 EXPOSE ${API_PORT}
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1:${API_PORT}/api/health" || exit 1
+# Migrations run before the port opens. start_period covers that; probes during it are not failures.
+HEALTHCHECK --interval=10s --timeout=15s --start-period=120s --retries=6 \
+  CMD wget -q -T 10 -O /dev/null "http://127.0.0.1:${API_PORT}/api/health" || exit 1
 
 ENTRYPOINT ["apps/api/docker-entrypoint.sh"]
