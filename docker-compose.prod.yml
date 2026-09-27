@@ -49,13 +49,15 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - 4100
-    # The entrypoint applies migrations before anything listens on 4100. Probes during
+    # The entrypoint applies migrations before anything listens. Probes during
     # start_period do not count as failures. timeout must stay above wget -T.
+    # No nested quotes: Dokploy re-serializes this file, and escaped quotes in a
+    # CMD-SHELL string make wget request a URL that never matches /api/health.
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "wget -q -T 10 -O /dev/null \"http://127.0.0.1:$${API_PORT:-4100}/api/health\"",
+          "wget -S -T 10 -O /dev/null http://127.0.0.1:$${API_PORT:-4100}/api/health",
         ]
       interval: 10s
       timeout: 15s

@@ -91,7 +91,9 @@ export function createApp(deps: AppDeps) {
           uptimeSeconds: Math.round(process.uptime()),
         },
       })
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error"
+      console.error("[health] database check failed:", message.replace(/postgres(?:ql)?:\/\/[^@\s]+@/gi, "postgresql://***@"))
       return c.json(failure("INTERNAL_ERROR", "Database is unreachable"), 503)
     }
   })

@@ -48,6 +48,16 @@ case "$DATABASE_URL" in
     ;;
 esac
 
+# Bound the TCP handshake. Without this, a black-holed database host keeps
+# `prisma migrate deploy` blocked longer than the healthcheck start_period, so
+# Docker marks the container unhealthy while this script is still waiting.
+case "$DATABASE_URL" in
+  *connect_timeout=*) ;;
+  *\?*) DATABASE_URL="${DATABASE_URL}&connect_timeout=15" ;;
+  *) DATABASE_URL="${DATABASE_URL}?connect_timeout=15" ;;
+esac
+export DATABASE_URL
+
 echo "[entrypoint] database target: $(db_host "$DATABASE_URL")"
 
 echo "[entrypoint] applying database migrations (prisma migrate deploy)..."
@@ -58,4 +68,8 @@ echo "[entrypoint] verifying schema (Category/Vendor/Product)..."
 bun --filter @workspace/db verify-schema
 
 echo "[entrypoint] migrations up to date. starting API..."
-exec bun run apps/api/dist/index.js
+# `bun run <file>` stays a wrapper (PID 1) around a child bun. Run the bundle
+# directly so the server is PID 1 and a wrapper exit cannot kill the container.
+# Docker sets HOSTNAME to the container id; Bun must not use that as the bind address.
+unset HOSTNAME
+exec bun apps/api/dist/index.js

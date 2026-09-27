@@ -47,6 +47,6 @@ EXPOSE ${API_PORT}
 
 # Migrations run before the port opens. start_period covers that; probes during it are not failures.
 HEALTHCHECK --interval=10s --timeout=15s --start-period=120s --retries=6 \
-  CMD wget -q -T 10 -O /dev/null "http://127.0.0.1:${API_PORT}/api/health" || exit 1
+  CMD wget -S -T 10 -O /dev/null "http://127.0.0.1:${API_PORT}/api/health" || exit 1
 
 ENTRYPOINT ["apps/api/docker-entrypoint.sh"]
