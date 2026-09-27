@@ -91,7 +91,7 @@ async function resolveUser(
   })
   if (existing) return existing.status === "DELETED" ? null : existing
 
-  // The Clerk webhook normally creates the row; this covers the first request racing it.
+  // First authenticated request creates the row from the verified Clerk profile.
   const profile = await identity.fetchProfile(clerkId)
   if (!profile) return null
   try {

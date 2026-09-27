@@ -18,7 +18,6 @@
     "@workspace/types": "workspace:*",
     "@workspace/validators": "workspace:*",
     "hono": "^4.13.9",
-    "svix": "^2.5.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

@@ -44,7 +44,9 @@ ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} \
 RUN bunx turbo run build --filter=web
 
 FROM base AS runner
-RUN addgroup -S app && adduser -S app -G app
+# wget is required for the HEALTHCHECK below.
+RUN apk add --no-cache wget && \
+    addgroup -S app && adduser -S app -G app
 WORKDIR /app
 # Standalone output only traces node_modules + server.js; static assets and public/ are copied in separately.
 COPY --from=installer --chown=app:app /app/apps/web/.next/standalone ./

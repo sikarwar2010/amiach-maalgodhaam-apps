@@ -30,11 +30,14 @@ RUN bun install --frozen-lockfile
 RUN bunx turbo run build --filter=api
 
 FROM base AS runner
-# The Prisma query engine links against OpenSSL at runtime.
-RUN apk add --no-cache openssl && \
+# The Prisma query engine links against OpenSSL at runtime. wget is required for the HEALTHCHECK.
+RUN apk add --no-cache openssl wget && \
     addgroup -S app && adduser -S app -G app
 WORKDIR /app
 COPY --from=installer --chown=app:app /app .
+# docker-entrypoint.sh runs `prisma migrate deploy` before starting the server — see the script's own
+# comments for why. chmod must happen as root, before dropping to the non-root `app` user below.
+RUN chmod +x apps/api/docker-entrypoint.sh
 USER app
 
 ENV NODE_ENV=production
@@ -45,4 +48,4 @@ EXPOSE ${API_PORT}
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${API_PORT}/api/health" || exit 1
 
-CMD ["bun", "run", "apps/api/dist/index.js"]
+ENTRYPOINT ["apps/api/docker-entrypoint.sh"]

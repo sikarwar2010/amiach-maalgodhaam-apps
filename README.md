@@ -41,12 +41,11 @@ explain that authentication is not configured. To enable sign-in:
 
 1. Create a Clerk application, enable **Email** and **Google**.
 2. Put `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` in both env files.
-3. Add a webhook endpoint `POST {API_URL}/api/webhooks/clerk` (events `user.created`, `user.updated`,
-   `user.deleted`) and put its signing secret in `CLERK_WEBHOOK_SECRET`.
-4. Make yourself an admin: put your e-mail in `SUPER_ADMIN_EMAILS` (any environment, including production). You become
+3. Make yourself an admin: put your e-mail in `SUPER_ADMIN_EMAILS` (any environment, including production). You become
    `SUPER_ADMIN` the first time you use the app while signed in with a **verified** address. Other admins: Clerk
    Dashboard → Users → _(user)_ → **Public metadata** → `{ "role": "ADMIN" }` (or `STAFF`), or a super admin can
-   change roles in `/admin/users`.
+   change roles in `/admin/users`. The API creates the local user row on the first authenticated request; Clerk
+   webhooks are not required.
 
 ## Commands
 
@@ -76,7 +75,7 @@ API tests are integration tests against a real Postgres: `apps/api/test/setup-db
   `{ success: true, data }` / `{ success: false, error: { code, message, details? } }`.
 - Uploads are identified by magic bytes (not client MIME), size-limited (5 MB), stored under server-generated keys;
   identity documents are private (owner + back-office only).
-- Audit log for sensitive actions (`AuditLog`), idempotent Clerk webhook (`WebhookEvent` keyed by `svix-id`).
+- Audit log for sensitive actions (`AuditLog`).
 - CORS allow-list, secure headers, body limits and per-IP rate limits (in-memory — use a shared store if you run
   several API instances, and set `TRUST_PROXY=true` only behind a proxy that sets `X-Forwarded-For`).
 - The Next.js `proxy.ts` and the portal layouts redirect people to the right place, but they are conveniences —

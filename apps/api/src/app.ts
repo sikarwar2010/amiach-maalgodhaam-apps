@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@workspace/db"
+import { Prisma, type PrismaClient } from "@workspace/db"
 import { ERROR_STATUS } from "@workspace/types"
 import { Hono } from "hono"
 import { bodyLimit } from "hono/body-limit"
@@ -22,7 +22,6 @@ import { contactRoutes } from "./routes/contact"
 import { cartRoutes, orderRoutes, wishlistRoutes } from "./routes/commerce"
 import { meRoutes } from "./routes/me"
 import { vendorRoutes } from "./routes/vendor"
-import { webhookRoutes } from "./routes/webhooks"
 
 export interface AppDeps {
   db: PrismaClient
@@ -97,9 +96,6 @@ export function createApp(deps: AppDeps) {
     }
   })
 
-  // Signature-verified, not session-authenticated.
-  app.route("/api/webhooks", webhookRoutes)
-
   app.use("/api/*", attachUser)
 
   app.route("/api", uploadRoutes)
@@ -145,10 +141,18 @@ export function createApp(deps: AppDeps) {
       return c.json(failure(code, error.message || "Request failed"), error.status as 400)
     }
     // Never echo internals to the client; the request id lets support find the log line.
-    console.error(
-      `[${c.get("requestId")}] ${c.req.method} ${c.req.path}`,
-      error instanceof Error ? `${error.name}: ${error.message}` : "unknown error"
-    )
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      console.error(
+        `[${c.get("requestId")}] ${c.req.method} ${c.req.path}`,
+        `PrismaClientKnownRequestError code=${error.code}`,
+        error.message
+      )
+    } else {
+      console.error(
+        `[${c.get("requestId")}] ${c.req.method} ${c.req.path}`,
+        error instanceof Error ? `${error.name}: ${error.message}` : "unknown error"
+      )
+    }
     return c.json(failure("INTERNAL_ERROR", "Something went wrong on our side"), 500)
   })
 

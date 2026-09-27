@@ -68,7 +68,6 @@ Fill in at minimum:
 - `WEB_ORIGIN=https://yourdomain.com`
 - `PUBLIC_API_URL=https://api.yourdomain.com`
 - `NEXT_PUBLIC_API_URL=https://api.yourdomain.com`
-- Leave `CLERK_WEBHOOK_SECRET` blank for now — you don't have it until step 6.
 
 ## 4. Configure domains
 
@@ -88,34 +87,14 @@ tested locally. Watch the build logs; a failure here is almost always a missing/
 environment variable (Next.js's build step needs `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` to be a
 syntactically valid Clerk key, or the `web` build fails).
 
-Once it's up, apply the database migrations (this is **not** run automatically — see "Why
-migrations are manual" below). Open a shell into the running `api` container from Dokploy's
-**Terminal**/**Advanced → Shell** tab (or `docker exec -it <api-container> sh` if you're SSHed into
-the server yourself) and run:
-
-```bash
-bun run db:deploy
-```
-
-I verified this exact command in the built image. **Do not run `bunx prisma migrate deploy`
-directly** — `prisma` is a dependency of `packages/db`, not hoisted to the image's root, so a bare
-`bunx prisma` silently fetches and runs the *latest* Prisma CLI from the registry instead of the
-project's pinned 7.10.0. `bun run db:deploy` resolves correctly and is what I tested.
+The API image's entrypoint runs `bun run db:deploy` (Prisma `migrate deploy`) before the server
+listens, so schema migrations apply automatically on each container start. That command only
+applies committed migrations under `packages/db/prisma/migrations` — it never resets or drops data.
 
 Do **not** run `bun run db:seed` in production — it loads demo/placeholder listings. It refuses to
 run at all unless you explicitly pass `SEED_ALLOW_PRODUCTION=true`.
 
-## 6. Point Clerk's webhook at production
-
-Clerk Dashboard → your production instance → **Webhooks** → **Add Endpoint**:
-
-- URL: `https://api.yourdomain.com/api/webhooks/clerk`
-- Events: `user.created`, `user.updated`, `user.deleted`
-
-Copy the endpoint's **Signing Secret** into `CLERK_WEBHOOK_SECRET` in Dokploy's Environment tab,
-then **Redeploy** the `api` service so it picks up the new value.
-
-## 7. Verify
+## 6. Verify
 
 ```bash
 curl https://api.yourdomain.com/api/health
@@ -141,6 +120,7 @@ address, and confirm `/admin` loads.
   per-process. Fine for one replica; back it with Redis before running more than one.
 - I have not tested a real Clerk **production** key end to end (only the format-invalid
   placeholder used to validate the Docker build, and the development key used throughout this
-  project). Please confirm sign-in and the webhook after step 6.
+  project). Please confirm sign-in after deploy. Clerk webhooks are not used: the API creates the
+  local user row on the first authenticated request from a verified session.
 
 Sources on Dokploy's Compose/domain conventions used above: [Docker Compose overview](https://docs.dokploy.com/docs/core/docker-compose), [Domains — Docker Compose](https://docs.dokploy.com/docs/core/docker-compose/domains), [Compose example](https://docs.dokploy.com/docs/core/docker-compose/example), [Environment Variables](https://docs.dokploy.com/docs/core/variables), [Database connections](https://docs.dokploy.com/docs/core/databases/connection).

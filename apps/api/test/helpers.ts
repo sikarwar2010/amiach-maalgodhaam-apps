@@ -4,8 +4,6 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { Webhook } from "svix"
-
 import { createApp } from "../src/app"
 import { loadEnv } from "../src/env"
 import type { ExternalProfile, IdentityProvider } from "../src/identity/provider"
@@ -13,8 +11,6 @@ import { createLocalStorage } from "../src/lib/storage"
 import { testDatabaseUrl } from "./db-url"
 
 export const db: PrismaClient = createPrismaClient(testDatabaseUrl())
-
-export const WEBHOOK_SECRET = "whsec_" + Buffer.from("maalgodaam-test-secret-32-bytes").toString("base64")
 
 /** In-memory identity provider: the bearer token is literally `test:<clerkId>`. */
 export const knownProfiles = new Map<string, ExternalProfile>()
@@ -45,7 +41,6 @@ export const app = createApp({
   env: loadEnv({
     NODE_ENV: "test",
     DATABASE_URL: testDatabaseUrl(),
-    CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
     WEB_ORIGIN: "http://localhost:3000",
     SUPER_ADMIN_EMAILS: "owner@example.com",
   }),
@@ -110,21 +105,6 @@ export async function resetDb(): Promise<void> {
   }
   knownProfiles.clear()
   metadataSync.length = 0
-}
-
-export function signWebhook(payload: unknown, id = `msg_${crypto.randomUUID()}`) {
-  const raw = JSON.stringify(payload)
-  const ts = new Date()
-  const signature = new Webhook(WEBHOOK_SECRET).sign(id, ts, raw)
-  return {
-    raw,
-    headers: {
-      "svix-id": id,
-      "svix-timestamp": String(Math.floor(ts.getTime() / 1000)),
-      "svix-signature": signature,
-      "content-type": "application/json",
-    },
-  }
 }
 
 /* ----------------------------- factories ----------------------------- */

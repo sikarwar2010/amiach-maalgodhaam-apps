@@ -20,14 +20,6 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   /** Clerk Backend API key. Required in production (checked below); without it the API cannot verify sessions. */
   CLERK_SECRET_KEY: optionalString(z.string().min(1)),
-  /**
-   * Svix signing secret for /api/webhooks/clerk. Genuinely optional: without it, Clerk sign-up/sign-in/
-   * session verification and user creation all still work in full (see `attachUser` in
-   * middleware/auth.ts, which creates the user row itself on first request if the webhook hasn't
-   * already). The only effect of leaving this unset is that Clerk-side profile edits (name/email/phone)
-   * and deletions don't auto-sync until the user's next request, and `user.deleted` isn't mirrored.
-   */
-  CLERK_WEBHOOK_SECRET: optionalString(z.string().min(1)),
   /** Origin(s) of the web app, comma-separated. Used for CORS and Clerk `azp` checks. */
   WEB_ORIGIN: z.string().default("http://localhost:3000,http://localhost:3001"),
   TRUST_PROXY: boolFromString.default(false),

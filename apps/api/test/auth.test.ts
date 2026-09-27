@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 
-import { call, db, get, knownProfiles, makeUser, makeVendor, patch, post, resetDb, signWebhook } from "./helpers"
+import { call, db, get, knownProfiles, makeUser, makeVendor, patch, post, resetDb } from "./helpers"
 
 beforeEach(resetDb)
 
@@ -167,84 +167,6 @@ describe("vendor registration", () => {
     expect(pub.body.data).not.toHaveProperty("email")
   })
 })
-
-describe("Clerk webhook", () => {
-  const userPayload = (id: string, email: string) => ({
-    type: "user.created",
-    data: {
-      id,
-      primary_email_address_id: "e1",
-      email_addresses: [{ id: "e1", email_address: email }],
-      first_name: "Web",
-      last_name: "Hook",
-      image_url: null,
-      phone_numbers: [],
-      public_metadata: {},
-    },
-  })
-
-  test("rejects unsigned and badly-signed requests", async () => {
-    const r = await call("POST", "/api/webhooks/clerk", {
-      json: userPayload("wh_1", "wh1@example.com"),
-      headers: {
-        "svix-id": "x",
-        "svix-timestamp": "1",
-        "svix-signature": "v1,bad",
-      },
-    })
-    expect(r.status).toBe(401)
-    const none = await call("POST", "/api/webhooks/clerk", { json: {} })
-    expect(none.status).toBe(400)
-    expect(await db.user.count()).toBe(0)
-  })
-
-  test("creates the user once even when delivered twice (idempotent)", async () => {
-    const { raw, headers } = signWebhook(userPayload("wh_2", "wh2@example.com"), "msg_fixed_1")
-    const send = () => app_request(raw, headers)
-    expect((await send()).status).toBe(200)
-    const second = await send()
-    expect(second.status).toBe(200)
-    expect((second.body.data as { result: string }).result).toBe("duplicate")
-    expect(await db.user.count({ where: { clerkId: "wh_2" } })).toBe(1)
-    expect(await db.webhookEvent.count()).toBe(1)
-  })
-
-  test("user.updated syncs profile, user.deleted frees the email", async () => {
-    const created = signWebhook(userPayload("wh_3", "wh3@example.com"))
-    await app_request(created.raw, created.headers)
-    const updated = signWebhook({
-      type: "user.updated",
-      data: {
-        ...userPayload("wh_3", "wh3@example.com").data,
-        first_name: "Changed",
-      },
-    })
-    await app_request(updated.raw, updated.headers)
-    expect((await db.user.findUniqueOrThrow({ where: { clerkId: "wh_3" } })).name).toBe("Changed Hook")
-
-    const deleted = signWebhook({
-      type: "user.deleted",
-      data: { id: "wh_3", deleted: true },
-    })
-    await app_request(deleted.raw, deleted.headers)
-    const row = await db.user.findUniqueOrThrow({ where: { clerkId: "wh_3" } })
-    expect(row.status).toBe("DELETED")
-    expect(row.email).not.toBe("wh3@example.com")
-    // …so the same person can sign up again.
-    const again = signWebhook(userPayload("wh_3b", "wh3@example.com"))
-    expect((await app_request(again.raw, again.headers)).status).toBe(200)
-  })
-})
-
-async function app_request(raw: string, headers: Record<string, string>) {
-  const { app } = await import("./helpers")
-  const res = await app.request("/api/webhooks/clerk", {
-    method: "POST",
-    headers,
-    body: raw,
-  })
-  return { status: res.status, body: (await res.json()) as { data?: unknown } }
-}
 
 describe("individual sellers", () => {
   test("an individual can register without a GSTIN or street address", async () => {
