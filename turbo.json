@@ -17,7 +17,8 @@
     "UPLOAD_DIR",
     "PUBLIC_API_URL",
     "TRUST_PROXY",
-    "SUPER_ADMIN_EMAILS"
+    "SUPER_ADMIN_EMAILS",
+    "NEXT_PHASE"
   ],
   "tasks": {
     "build": {

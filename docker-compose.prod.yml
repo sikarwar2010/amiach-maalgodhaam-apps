@@ -1,8 +1,13 @@
 # Production deployment — point Dokploy's "Docker Compose" application at this file.
 #
-# - Do NOT add `dokploy-network` or Traefik labels here. Configure a domain for each service from
-#   Dokploy's Domains tab instead (Host = your domain, Container Port = 4100 for api / 3000 for
-#   web); Dokploy injects the network and Traefik labels for you. See DEPLOY.md.
+# - Both services join `dokploy-network` EXPLICITLY (plus the default network, for api<->web). A
+#   Dokploy-managed database also lives on dokploy-network; configuring a domain in the UI *sometimes*
+#   attaches a service to it too, but that is not reliable enough to depend on for database
+#   connectivity (confirmed in https://github.com/Dokploy/dokploy/discussions/3192) — declaring it
+#   here means the api container can reach the database from the moment it starts, not only once
+#   Traefik has finished wiring up routing for a configured domain. Do not add manual Traefik labels
+#   here; still configure domains from Dokploy's Domains tab (Host = your domain, Container Port =
+#   4100 for api / 3000 for web) — Dokploy adds the routing labels for you. See DEPLOY.md.
 # - All variables below come from ONE place: the Environment tab of this Compose application in
 #   Dokploy, which it writes to a `.env` file next to this compose file (that's how `${VAR}`
 #   interpolation below is filled in). See .env.production.example for the full list and comments.
@@ -36,6 +41,9 @@ services:
       # Local-disk uploads (product images, vendor documents) survive redeploys of this service.
       # Swap the storage driver for S3/R2/Hetzner Object Storage before you need to scale to >1 replica.
       - api_uploads:/data/uploads
+    networks:
+      - default
+      - dokploy-network
     ports:
       - 4100
     healthcheck:
@@ -64,6 +72,9 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      - default
+      - dokploy-network
     ports:
       - 3000
     healthcheck:
@@ -72,6 +83,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+networks:
+  # Dokploy's shared network — its Traefik and every Dokploy-managed database live here.
+  dokploy-network:
+    external: true
 
 volumes:
   api_uploads:

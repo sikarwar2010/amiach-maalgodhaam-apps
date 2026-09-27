@@ -22,6 +22,10 @@ FROM base AS installer
 RUN apk add --no-cache libc6-compat
 # The full pruned source (not just package.json), so workspace packages resolve during the build.
 COPY --from=pruner /app/out/full/ .
+# `turbo prune --docker` writes the pruned lockfile to out/bun.lock, a SIBLING of out/full/ — it is
+# not inside it. Without this, `--frozen-lockfile` has no lockfile to freeze against and silently
+# writes a new one, which can install different versions than the ones actually pinned in the repo.
+COPY --from=pruner /app/out/bun.lock ./bun.lock
 RUN bun install --frozen-lockfile
 
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY

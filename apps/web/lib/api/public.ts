@@ -7,6 +7,7 @@ import type {
   PublicVendorDto,
   SearchResultDto,
 } from "@workspace/types"
+import { PHASE_PRODUCTION_BUILD } from "next/constants"
 
 import { API_URL } from "../config"
 import { ApiError, apiRequest, type ApiResult } from "./fetcher"
@@ -125,12 +126,24 @@ export async function getPlatformStats(): Promise<PlatformStatsDto> {
   ).data
 }
 
-/** Runs a loader and returns `fallback` when the API is down, so a marketing page never hard-fails. */
+/**
+ * Runs a loader and returns `fallback` when the API is down, so a marketing page never hard-fails.
+ *
+ * During `next build`, Next.js renders each dynamic page once to confirm it really is dynamic, then
+ * discards that render — the API has no reason to be reachable at build time (in Docker/Dokploy the
+ * image is built before the api container exists), so a failure here is expected, not a bug. Logged
+ * at `info` during a build and `error` at runtime, so a real outage is still loud in production logs.
+ */
 export async function safely<T>(load: () => Promise<T>, fallback: T): Promise<T> {
   try {
     return await load()
   } catch (error) {
-    console.error("[web] data load failed:", error instanceof Error ? error.message : "unknown error")
+    const message = error instanceof Error ? error.message : "unknown error"
+    if (process.env.NEXT_PHASE === PHASE_PRODUCTION_BUILD) {
+      console.info(`[web] (expected during build) API not reachable while pre-rendering: ${message}`)
+    } else {
+      console.error("[web] data load failed:", message)
+    }
     return fallback
   }
 }

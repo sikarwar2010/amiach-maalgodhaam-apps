@@ -21,6 +21,11 @@ RUN apk add --no-cache libc6-compat openssl
 # The full pruned source (not just package.json) — `prisma generate` (packages/db's postinstall)
 # needs prisma/schema.prisma to exist before `bun install` runs.
 COPY --from=pruner /app/out/full/ .
+# `turbo prune --docker` writes the pruned lockfile to out/bun.lock, a SIBLING of out/full/ — it is
+# not inside it. Without this, `--frozen-lockfile` has no lockfile to freeze against and silently
+# writes a new one (`bun install` logs "Saved lockfile"), which can install different versions than
+# the ones actually pinned in the repo.
+COPY --from=pruner /app/out/bun.lock ./bun.lock
 RUN bun install --frozen-lockfile
 RUN bunx turbo run build --filter=api
 
