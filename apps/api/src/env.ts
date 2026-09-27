@@ -2,14 +2,32 @@ import { z } from "zod"
 
 const boolFromString = z.enum(["true", "false", "1", "0"]).transform((v) => v === "true" || v === "1")
 
+/**
+ * Wraps a genuinely-optional string field so a BLANK value is treated the same as an absent one.
+ *
+ * `.optional()` alone only bypasses validation for `undefined` (the key missing entirely). Several
+ * deployment tools — Dokploy included — write every configured environment variable to `.env` even
+ * when its UI field was left empty, producing `KEY=` (an empty string), not an absent key. Without
+ * this, leaving such a field blank in Dokploy's Environment tab crashes startup with a raw Zod
+ * message ("Too small: expected string to have >=1 characters") instead of actually being optional.
+ */
+const optionalString = <S extends z.ZodString>(schema: S) =>
+  z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), schema.optional())
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  /** Clerk Backend API key. Required in production; without it the API cannot verify sessions. */
-  CLERK_SECRET_KEY: z.string().min(1).optional(),
-  /** Svix signing secret for /api/webhooks/clerk. */
-  CLERK_WEBHOOK_SECRET: z.string().min(1).optional(),
+  /** Clerk Backend API key. Required in production (checked below); without it the API cannot verify sessions. */
+  CLERK_SECRET_KEY: optionalString(z.string().min(1)),
+  /**
+   * Svix signing secret for /api/webhooks/clerk. Genuinely optional: without it, Clerk sign-up/sign-in/
+   * session verification and user creation all still work in full (see `attachUser` in
+   * middleware/auth.ts, which creates the user row itself on first request if the webhook hasn't
+   * already). The only effect of leaving this unset is that Clerk-side profile edits (name/email/phone)
+   * and deletions don't auto-sync until the user's next request, and `user.deleted` isn't mirrored.
+   */
+  CLERK_WEBHOOK_SECRET: optionalString(z.string().min(1)),
   /** Origin(s) of the web app, comma-separated. Used for CORS and Clerk `azp` checks. */
   WEB_ORIGIN: z.string().default("http://localhost:3000,http://localhost:3001"),
   TRUST_PROXY: boolFromString.default(false),
@@ -18,7 +36,7 @@ const envSchema = z.object({
   /** Directory for uploaded files (local storage driver). */
   UPLOAD_DIR: z.string().default("./uploads"),
   /** Public base URL of this API, used to build file URLs returned to clients. */
-  PUBLIC_API_URL: z.string().url().optional(),
+  PUBLIC_API_URL: optionalString(z.string().url()),
 })
 
 export type Env = Omit<z.infer<typeof envSchema>, "PUBLIC_API_URL"> & {
