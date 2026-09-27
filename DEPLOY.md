@@ -20,7 +20,8 @@ wrong and I'll help debug it.
 | `.dockerignore` | Keeps `node_modules`, `.next`, uploads, etc. out of the build context |
 
 The root [`docker-compose.yml`](docker-compose.yml) is unrelated — it's a local-only Postgres for
-development and is not used in production.
+development and is not used in production (`docker-compose.prod.yml` has its own separate `postgres`
+service, on its own named volume — the two never share data).
 
 ## 0. Prerequisites
 
@@ -34,20 +35,26 @@ development and is not used in production.
 - A **production** Clerk instance (Clerk Dashboard → your app → the environment switcher). Don't
   reuse the development instance — it has strict usage limits and a "development mode" watermark.
 
-## 1. Create the database
+## 1. Database
 
-In Dokploy: **Project → Create → Database → PostgreSQL** (version 16). This gives you backups and
-independent upgrades — don't run Postgres inside `docker-compose.prod.yml`.
+Postgres runs as its own service (`postgres`) inside `docker-compose.prod.yml`, on a persistent named
+volume (`postgres_data`) — **you do not create a separate Dokploy "Database" resource**, and you do
+not set `DATABASE_URL` directly. It's derived automatically from `POSTGRES_DB`/`POSTGRES_USER`/
+`POSTGRES_PASSWORD` (step 3), pointing at the compose service name `postgres` — never `localhost`.
 
-Once it's created, open its **General** tab and copy the **Internal Connection URL** (not the
-external one — that's for connecting a desktop client, and routes through the public internet
-unnecessarily for the app itself). You'll paste it as `DATABASE_URL` in step 3.
+This trades away Dokploy's managed-database backups/upgrades for one less moving part and one less
+place to misconfigure (a manually-pasted `DATABASE_URL` was the single biggest source of production
+issues in this project's deploy history — copy-pasted local-dev values, wrong databases, etc.). If you
+want Dokploy's managed database back later, see the comment at the top of `docker-compose.prod.yml`.
 
-**Do not reuse this repo's own `DATABASE_URL`** from `.env`/`.env.example` (the `localhost:5433`
-value) — that's the local-only dev Postgres from the root [`docker-compose.yml`](docker-compose.yml),
-which does not exist on your Dokploy server. Inside a container, `localhost` always means the
-container itself, so that value can never reach a real database in production; the api container's
-entrypoint now refuses to start rather than guess what you meant.
+Set a **strong, unique** `POSTGRES_PASSWORD` in step 3 — generate one with a password manager or
+`openssl rand -base64 24`, never reuse a password from elsewhere. Never paste a real password into
+chat, a commit, or any tracked file — only into Dokploy's Environment tab.
+
+**Do not reuse this repo's own dev `DATABASE_URL`** from `.env`/`.env.example` (`localhost:5433`) —
+that's the local-only dev Postgres from the root [`docker-compose.yml`](docker-compose.yml). Inside a
+container, `localhost` always means the container itself; the api container's entrypoint refuses to
+start on a `localhost`/`127.0.0.1` `DATABASE_URL` rather than guess what you meant.
 
 ## 2. Create the Compose application
 
@@ -66,7 +73,8 @@ covers *both* services — the compose file's `${VAR}` references are filled fro
 
 Fill in at minimum:
 
-- `DATABASE_URL` — from step 1.
+- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` — from step 1. `DATABASE_URL` is derived from
+  these automatically; do not set it yourself.
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` — from your **production** Clerk instance.
 - `SUPER_ADMIN_EMAILS` — your own email. You become `SUPER_ADMIN` the first time you sign in with
   a Clerk-verified address that's on this list (see `apps/api/src/middleware/auth.ts`). Set this

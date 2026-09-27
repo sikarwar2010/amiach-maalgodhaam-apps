@@ -1,23 +1,47 @@
 # Production deployment — point Dokploy's "Docker Compose" application at this file.
 #
-# - Both services join `dokploy-network` EXPLICITLY (plus the default network, for api<->web). A
-#   Dokploy-managed database also lives on dokploy-network; configuring a domain in the UI *sometimes*
-#   attaches a service to it too, but that is not reliable enough to depend on for database
-#   connectivity (confirmed in https://github.com/Dokploy/dokploy/discussions/3192) — declaring it
-#   here means the api container can reach the database from the moment it starts, not only once
-#   Traefik has finished wiring up routing for a configured domain. Do not add manual Traefik labels
-#   here; still configure domains from Dokploy's Domains tab (Host = your domain, Container Port =
-#   4100 for api / 3000 for web) — Dokploy adds the routing labels for you. See DEPLOY.md.
+# - `api`/`web` join `dokploy-network` EXPLICITLY (plus the default network, for api<->web<->postgres).
+#   Do not add manual Traefik labels here; configure domains from Dokploy's Domains tab (Host = your
+#   domain, Container Port = 4100 for api / 3000 for web) — Dokploy adds the routing labels for you.
+#   See DEPLOY.md.
 # - All variables below come from ONE place: the Environment tab of this Compose application in
 #   Dokploy, which it writes to a `.env` file next to this compose file (that's how `${VAR}`
 #   interpolation below is filled in). See .env.production.example for the full list and comments.
-# - Uses a managed PostgreSQL database — create one as its own Dokploy "Database" resource (gets
-#   you backups and upgrades independent of app deploys) and put its Internal Connection URL in
-#   DATABASE_URL. Do not run Postgres in this file.
+# - Postgres runs AS A SERVICE in this file (`postgres`, below), on a named volume. This trades away
+#   Dokploy's managed-Database resource (automatic backups/upgrades independent of app deploys) for
+#   simplicity — one compose stack, one place to configure, and DATABASE_URL is derived automatically
+#   from POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB instead of being a separately pasted value (the
+#   single biggest source of production misconfiguration in this project's deploy history — see
+#   DEPLOY.md). If you want Dokploy's managed database back, delete the `postgres` service below,
+#   remove it from `api`'s `depends_on`, and set DATABASE_URL directly again as before.
+# - NEVER run `docker compose ... down -v` in production — that deletes the `postgres_data` volume,
+#   i.e. the database. Plain `down`/`up`/redeploys are safe; the volume persists.
 # - `web`'s NEXT_PUBLIC_* values are inlined into the browser bundle at BUILD time (via `args:`),
 #   not read at container start — changing them requires a rebuild, which Dokploy does on redeploy.
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maalgodaam}
+      POSTGRES_USER: ${POSTGRES_USER:-maalgodaam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in Dokploy's Environment tab}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - default
+    # No published host port: only `api`, in this same compose network, needs to reach it. Use an
+    # SSH tunnel (`ssh -L 5432:localhost:5432 your-server`, then run `docker exec -it <postgres
+    # container> psql -U ... `, or tunnel to the container's 5432 via `docker exec`) for manual access
+    # instead of exposing Postgres to the internet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maalgodaam} -d ${POSTGRES_DB:-maalgodaam}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   api:
     build:
       context: .
@@ -26,7 +50,10 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: ${API_PORT:-4100}
-      DATABASE_URL: ${DATABASE_URL}
+      # Derived from the postgres service above — the hostname is the compose service name (`postgres`),
+      # never `localhost` (see apps/api/docker-entrypoint.sh, which now refuses to start on a localhost
+      # DATABASE_URL rather than silently guessing what was meant).
+      DATABASE_URL: postgresql://${POSTGRES_USER:-maalgodaam}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-maalgodaam}?schema=public
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
       SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS}
       # The web app's public origin(s), comma-separated — used for CORS and Clerk's `azp` check.
@@ -40,13 +67,12 @@ services:
       # Local-disk uploads (product images, vendor documents) survive redeploys of this service.
       # Swap the storage driver for S3/R2/Hetzner Object Storage before you need to scale to >1 replica.
       - api_uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - default
       - dokploy-network
-    # localhost in DATABASE_URL is this container, not Postgres. The entrypoint rewrites that
-    # host to host.docker.internal; host-gateway makes the name exist on Linux as well as Desktop.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - 4100
     # The entrypoint applies migrations before anything listens. Probes during
@@ -96,9 +122,11 @@ services:
       start_period: 15s
 
 networks:
-  # Dokploy's shared network — its Traefik and every Dokploy-managed database live here.
+  # Dokploy's shared network — its Traefik lives here; needed for `api`/`web` domain routing.
+  # `postgres` deliberately does NOT join this network — only `api` needs to reach it, over `default`.
   dokploy-network:
     external: true
 
 volumes:
   api_uploads:
+  postgres_data:

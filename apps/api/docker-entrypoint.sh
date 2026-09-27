@@ -38,17 +38,16 @@ db_host() {
 }
 
 # FAIL LOUD, do not silently "fix" this: every `localhost`/`127.0.0.1` database URL in this repo is the
-# LOCAL DEV Postgres (docker-compose.yml — explicitly commented "Never point production at this", port
-# 5433; .env.example's DATABASE_URL uses exactly this value). Inside ANY container, "localhost" always
-# means the container itself, so a value like this can never be a valid production target — it means
-# DATABASE_URL in Dokploy's Environment tab was set to a local/dev connection string instead of the
-# real database's Internal Connection URL (see DEPLOY.md step 1). An earlier version of this script
-# rewrote it to host.docker.internal automatically; that masked the misconfiguration as a networking
-# problem instead of surfacing it, and host.docker.internal is not a generic production fix — Dokploy's
-# actual database (its own managed Postgres, or an external one) has its own real hostname on
-# dokploy-network, not the developer's machine. If you genuinely need this container to reach a
-# host-side Postgres for local testing, set DATABASE_URL to host.docker.internal yourself; this script
-# will not guess it for you.
+# LOCAL DEV Postgres (root docker-compose.yml — explicitly commented "Never point production at this",
+# port 5433; .env.example's DATABASE_URL uses exactly this value). Inside ANY container, "localhost"
+# always means the container itself, so a value like this can never be a valid production target.
+# In production, DATABASE_URL is normally auto-derived by docker-compose.prod.yml from
+# POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB, pointing at the `postgres` compose service — seeing
+# localhost here means DATABASE_URL was overridden directly (or the old manual-paste setup is still in
+# use) with a local/dev connection string. An earlier version of this script rewrote it to
+# host.docker.internal automatically; that masked the misconfiguration as a networking problem instead
+# of surfacing it. If you genuinely need this container to reach a host-side Postgres for local
+# testing, set DATABASE_URL to host.docker.internal yourself; this script will not guess it for you.
 case "$DATABASE_URL" in
   *@localhost:*|*@localhost/*|*@127.0.0.1:*|*@127.0.0.1/*)
     echo "[entrypoint] DATABASE_URL points at $(db_host "$DATABASE_URL") — refusing to start." >&2
