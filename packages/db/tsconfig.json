@@ -1,0 +1,6 @@
+{
+  "extends": "@workspace/typescript-config/library.json",
+  "compilerOptions": { "types": ["bun", "node"] },
+  "include": ["src", "prisma", "prisma.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

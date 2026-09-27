@@ -1,0 +1,77 @@
+# Production deployment — point Dokploy's "Docker Compose" application at this file.
+#
+# - Do NOT add `dokploy-network` or Traefik labels here. Configure a domain for each service from
+#   Dokploy's Domains tab instead (Host = your domain, Container Port = 4100 for api / 3000 for
+#   web); Dokploy injects the network and Traefik labels for you. See DEPLOY.md.
+# - All variables below come from ONE place: the Environment tab of this Compose application in
+#   Dokploy, which it writes to a `.env` file next to this compose file (that's how `${VAR}`
+#   interpolation below is filled in). See .env.production.example for the full list and comments.
+# - Uses a managed PostgreSQL database — create one as its own Dokploy "Database" resource (gets
+#   you backups and upgrades independent of app deploys) and put its Internal Connection URL in
+#   DATABASE_URL. Do not run Postgres in this file.
+# - `web`'s NEXT_PUBLIC_* values are inlined into the browser bundle at BUILD time (via `args:`),
+#   not read at container start — changing them requires a rebuild, which Dokploy does on redeploy.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: ${API_PORT:-4100}
+      DATABASE_URL: ${DATABASE_URL}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET}
+      SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS}
+      # The web app's public origin(s), comma-separated — used for CORS and Clerk's `azp` check.
+      WEB_ORIGIN: ${WEB_ORIGIN}
+      # This API's own public URL — used to build the URLs of files it serves (product images, vendor documents).
+      PUBLIC_API_URL: ${PUBLIC_API_URL}
+      # Dokploy's Traefik sits in front and sets X-Forwarded-For; trust it for rate-limiting by real client IP.
+      TRUST_PROXY: "true"
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      # Local-disk uploads (product images, vendor documents) survive redeploys of this service.
+      # Swap the storage driver for S3/R2/Hetzner Object Storage before you need to scale to >1 replica.
+      - api_uploads:/data/uploads
+    ports:
+      - 4100
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4100/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        # The BROWSER's URL for the API — must be the public https:// domain, not the internal service name.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Server-side Clerk calls (this never reaches the browser).
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      # Server components call the API directly over the compose network — no public hop needed.
+      API_URL: http://api:4100
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - 3000
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  api_uploads:

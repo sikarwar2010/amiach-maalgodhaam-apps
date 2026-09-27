@@ -1,0 +1,7 @@
+-- CreateEnum
+CREATE TYPE "VendorType" AS ENUM ('BUSINESS', 'INDIVIDUAL');
+
+-- AlterTable
+ALTER TABLE "Vendor" ADD COLUMN     "vendorType" "VendorType" NOT NULL DEFAULT 'BUSINESS',
+ALTER COLUMN "gstin" DROP NOT NULL,
+ALTER COLUMN "addressLine" DROP NOT NULL;

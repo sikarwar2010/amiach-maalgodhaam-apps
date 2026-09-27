@@ -1,0 +1,16 @@
+# Applies to every Docker build in this repo (build context is the repo root).
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/coverage
+**/out
+.git
+.github
+apps/api/uploads
+packages/db/src/generated
+*.log
+.env
+.env.*
+!.env.example
+!**/.env.example

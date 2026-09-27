@@ -1,0 +1,724 @@
+// MaalGodaam.com — PostgreSQL schema.
+// Role is an enum (not a table) so it is checked by the database; add a value + migration to extend.
+// Keep the enums below in sync with packages/types (checked at compile time in src/enum-parity.ts).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/**
+ * ------------------------------------------------------------------
+ */
+/**
+ * Enums
+ */
+/**
+ * ------------------------------------------------------------------
+ */
+
+enum Role {
+  BUYER
+  VENDOR
+  ADMIN
+  SUPER_ADMIN
+  STAFF
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum BuyerType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum VendorType {
+  BUSINESS
+  INDIVIDUAL
+}
+
+enum VendorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum ProductStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+  ARCHIVED
+  OUT_OF_STOCK
+}
+
+enum ProductCondition {
+  SURPLUS
+  OVERSTOCK
+  EXCESS
+  DISCONTINUED
+  CLEARANCE
+  CUSTOMER_RETURN
+  DISPLAY_STOCK
+  FACTORY_STOCK
+}
+
+enum DealType {
+  BUY_NOW
+  REQUEST_QUOTE
+  BULK_DEAL
+  CONTACT_SUPPLIER
+}
+
+enum MaterialUnit {
+  SQ_FT
+  PIECE
+  BOX
+  SET
+  RUNNING_FT
+  SHEET
+  ROLL
+  UNIT
+}
+
+enum LogisticsMethod {
+  TRANSPORT_ARRANGED
+  SELF_PICKUP
+  FREIGHT
+  LOCAL_DELIVERY
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum OrderChannel {
+  B2C
+  B2B
+}
+
+enum PaymentMethod {
+  COD
+  ONLINE
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum InquiryStatus {
+  OPEN
+  QUOTED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum QuoteStatus {
+  SUBMITTED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum VendorDocumentType {
+  GST_CERTIFICATE
+  PAN_CARD
+  BUSINESS_REGISTRATION
+  CANCELLED_CHEQUE
+  OTHER
+}
+
+enum ProductDocumentType {
+  SPEC_SHEET
+  CERTIFICATE
+  TEST_REPORT
+  OTHER
+}
+
+enum AddressType {
+  SHIPPING
+  BILLING
+}
+
+enum NotificationType {
+  SYSTEM
+  ORDER
+  PRODUCT
+  VENDOR
+  INQUIRY
+  QUOTE
+}
+
+/**
+ * ------------------------------------------------------------------
+ */
+/**
+ * Identity
+ */
+/**
+ * ------------------------------------------------------------------
+ */
+
+model User {
+  id        String     @id @default(cuid())
+  /// Clerk user id — the only identity we trust; resolved server-side from the verified session.
+  clerkId   String     @unique
+  email     String     @unique
+  name      String?
+  phone     String?
+  imageUrl  String?
+  role      Role       @default(BUYER)
+  status    UserStatus @default(ACTIVE)
+  onboarded Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  deletedAt DateTime?
+
+  vendor        Vendor?
+  buyerProfile  BuyerProfile?
+  addresses     Address[]
+  wishlist      Wishlist?
+  cart          Cart?
+  orders        Order[]
+  inquiries     B2BInquiry[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  @@index([role, status])
+}
+
+model BuyerProfile {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  buyerType    BuyerType @default(INDIVIDUAL)
+  companyName  String?
+  gstin        String?
+  pan          String?
+  businessType String?
+  about        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Address {
+  id        String      @id @default(cuid())
+  userId    String
+  type      AddressType @default(SHIPPING)
+  label     String?
+  fullName  String
+  phone     String
+  line1     String
+  line2     String?
+  city      String
+  state     String
+  pincode   String
+  country   String      @default("IN")
+  isDefault Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Vendor {
+  id              String       @id @default(cuid())
+  userId          String       @unique
+  businessName    String
+  slug            String       @unique
+  vendorType      VendorType   @default(BUSINESS)
+  contactName     String
+  phone           String
+  email           String?
+  /// Required for BUSINESS vendors (enforced in the API); individual sellers have none.
+  gstin           String?      @unique
+  pan             String?
+  description     String?
+  logoUrl         String?
+  addressLine     String?
+  city            String
+  state           String
+  pincode         String
+  categories      String[]
+  status          VendorStatus @default(PENDING)
+  rejectionReason String?
+  verifiedAt      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products   Product[]
+  documents  VendorDocument[]
+  orderItems OrderItem[]
+  inquiries  B2BInquiry[]
+  quotes     B2BQuote[]
+
+  @@index([status])
+  @@index([city, state])
+}
+
+model VendorDocument {
+  id        String             @id @default(cuid())
+  vendorId  String
+  type      VendorDocumentType
+  name      String
+  url       String
+  status    DocumentStatus     @default(PENDING)
+  createdAt DateTime           @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+}
+
+/**
+ * ------------------------------------------------------------------
+ */
+/**
+ * Catalogue
+ */
+/**
+ * ------------------------------------------------------------------
+ */
+
+model Category {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+  imageUrl    String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subCategories SubCategory[]
+  products      Product[]
+}
+
+model SubCategory {
+  id         String   @id @default(cuid())
+  categoryId String
+  slug       String
+  name       String
+  createdAt  DateTime @default(now())
+
+  category Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([categoryId, slug])
+}
+
+model Product {
+  id               String            @id @default(cuid())
+  vendorId         String
+  categoryId       String
+  subCategoryId    String?
+  slug             String            @unique
+  title            String
+  brand            String?
+  description      String
+  condition        ProductCondition
+  dealType         DealType          @default(BUY_NOW)
+  status           ProductStatus     @default(DRAFT)
+  unit             MaterialUnit
+  /// Selling price per unit (INR).
+  price            Decimal           @db.Decimal(12, 2)
+  /// Original market value per unit — drives the "% off" shown on cards.
+  marketValue      Decimal?          @db.Decimal(12, 2)
+  currency         String            @default("INR")
+  minOrderQty      Int               @default(1)
+  city             String
+  state            String
+  pincode          String?
+  logisticsMethods LogisticsMethod[]
+  conditionNotes   String?
+  specifications   Json              @default("[]")
+  tags             String[]
+  featured         Boolean           @default(false)
+  rejectionReason  String?
+  publishedAt      DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+
+  vendor        Vendor            @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  category      Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  subCategory   SubCategory?      @relation(fields: [subCategoryId], references: [id], onDelete: SetNull)
+  images        ProductImage[]
+  variants      ProductVariant[]
+  inventory     Inventory?
+  documents     ProductDocument[]
+  bulkPrices    B2BPrice[]
+  wishlistItems WishlistItem[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  inquiries     B2BInquiry[]
+
+  @@index([status, publishedAt])
+  @@index([vendorId, status])
+  @@index([categoryId, status])
+  @@index([city, state])
+  @@index([price])
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  alt       String?
+  position  Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, position])
+}
+
+model ProductVariant {
+  id         String   @id @default(cuid())
+  productId  String
+  sku        String   @unique
+  name       String
+  attributes Json     @default("{}")
+  /// Falls back to Product.price when null.
+  price      Decimal? @db.Decimal(12, 2)
+  stock      Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model Inventory {
+  id                String   @id @default(cuid())
+  productId         String   @unique
+  quantity          Int      @default(0)
+  reserved          Int      @default(0)
+  lowStockThreshold Int      @default(0)
+  updatedAt         DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductDocument {
+  id        String              @id @default(cuid())
+  productId String
+  type      ProductDocumentType
+  name      String
+  url       String
+  createdAt DateTime            @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+/// Tiered (bulk) pricing for B2B buyers.
+model B2BPrice {
+  id        String   @id @default(cuid())
+  productId String
+  minQty    Int
+  maxQty    Int?
+  unitPrice Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, minQty])
+}
+
+/**
+ * ------------------------------------------------------------------
+ */
+/**
+ * Wishlist & cart (B2C)
+ */
+/**
+ * ------------------------------------------------------------------
+ */
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items WishlistItem[]
+}
+
+model WishlistItem {
+  id         String   @id @default(cuid())
+  wishlistId String
+  productId  String
+  createdAt  DateTime @default(now())
+
+  wishlist Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([wishlistId, productId])
+}
+
+model Cart {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+}
+
+model CartItem {
+  id         String   @id @default(cuid())
+  cartId     String
+  productId  String
+  variantId  String?
+  /// variantId or "" — gives the unique index below well-defined semantics (NULLs are distinct in Postgres).
+  variantKey String   @default("")
+  quantity   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId, variantKey])
+}
+
+/**
+ * ------------------------------------------------------------------
+ */
+/**
+ * Orders & payments
+ */
+/**
+ * ------------------------------------------------------------------
+ */
+
+model Order {
+  id              String       @id @default(cuid())
+  orderNumber     String       @unique
+  buyerId         String
+  channel         OrderChannel @default(B2C)
+  status          OrderStatus  @default(PENDING)
+  subtotal        Decimal      @db.Decimal(14, 2)
+  shippingFee     Decimal      @default(0) @db.Decimal(14, 2)
+  tax             Decimal      @default(0) @db.Decimal(14, 2)
+  total           Decimal      @db.Decimal(14, 2)
+  currency        String       @default("INR")
+  /// Immutable snapshots: later address edits must not rewrite history.
+  shippingAddress Json
+  billingAddress  Json?
+  notes           String?
+  placedAt        DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  buyer    User        @relation(fields: [buyerId], references: [id], onDelete: Restrict)
+  items    OrderItem[]
+  payments Payment[]
+  quote    B2BQuote?
+
+  @@index([buyerId, placedAt])
+  @@index([status])
+}
+
+model OrderItem {
+  id             String       @id @default(cuid())
+  orderId        String
+  productId      String?
+  vendorId       String
+  variantId      String?
+  /// Snapshot of the product at purchase time.
+  title          String
+  unit           MaterialUnit
+  unitPrice      Decimal      @db.Decimal(12, 2)
+  quantity       Int
+  lineTotal      Decimal      @db.Decimal(14, 2)
+  status         OrderStatus  @default(PENDING)
+  trackingNumber String?
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  vendor  Vendor   @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([vendorId, status])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  orderId     String
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  amount      Decimal       @db.Decimal(14, 2)
+  currency    String        @default("INR")
+  providerRef String?
+  paidAt      DateTime?
+  createdAt   DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+/**
+ * ------------------------------------------------------------------
+ */
+/**
+ * B2B: RFQ -> quote -> order
+ */
+/**
+ * ------------------------------------------------------------------
+ */
+
+model B2BInquiry {
+  id              String        @id @default(cuid())
+  buyerId         String
+  /// null = open requirement visible to approved vendors (buyer identity stays hidden until a quote is accepted).
+  vendorId        String?
+  productId       String?
+  title           String
+  description     String
+  quantity        Int
+  unit            MaterialUnit
+  targetUnitPrice Decimal?      @db.Decimal(12, 2)
+  deliveryCity    String
+  deliveryPincode String?
+  neededBy        DateTime?
+  status          InquiryStatus @default(OPEN)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  buyer   User       @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  vendor  Vendor?    @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  product Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  quotes  B2BQuote[]
+
+  @@index([buyerId, status])
+  @@index([vendorId, status])
+  @@index([status, createdAt])
+}
+
+model B2BQuote {
+  id           String      @id @default(cuid())
+  inquiryId    String
+  vendorId     String
+  unitPrice    Decimal     @db.Decimal(12, 2)
+  quantity     Int
+  totalPrice   Decimal     @db.Decimal(14, 2)
+  leadTimeDays Int         @default(7)
+  validUntil   DateTime
+  terms        String?
+  status       QuoteStatus @default(SUBMITTED)
+  decisionNote String?
+  /// Set when an accepted quote becomes an order (1:1).
+  orderId      String?     @unique
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  inquiry B2BInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  vendor  Vendor     @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  order   Order?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  /// One live quote per vendor per inquiry; a vendor revises by withdrawing and re-submitting.
+  @@unique([inquiryId, vendorId])
+  @@index([vendorId, status])
+}
+
+/**
+ * ------------------------------------------------------------------
+ */
+/**
+ * Platform
+ */
+/**
+ * ------------------------------------------------------------------
+ */
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType @default(SYSTEM)
+  title     String
+  body      String?
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorRole  String
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+}
+
+/// Processed Svix webhook ids — makes the Clerk webhook idempotent.
+model WebhookEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
+}
+
+/// Messages from the public contact form.
+model ContactMessage {
+  id        String    @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String?
+  message   String
+  handledAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([handledAt, createdAt])
+}

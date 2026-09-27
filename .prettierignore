@@ -4,4 +4,6 @@ node_modules/
 .turbo/
 coverage/
 pnpm-lock.yaml
-.pnpm-store/
+.pnpm-store/packages/db/src/generated/
+apps/api/uploads/
+packages/db/prisma/migrations/

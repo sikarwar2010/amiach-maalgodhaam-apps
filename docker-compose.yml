@@ -1,0 +1,22 @@
+# Local development database only. Never point production at this.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: maalgodaam-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: maalgodaam
+      POSTGRES_PASSWORD: maalgodaam_dev
+      POSTGRES_DB: maalgodaam
+    ports:
+      - "5433:5432"
+    volumes:
+      - maalgodaam_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maalgodaam -d maalgodaam"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  maalgodaam_pgdata:

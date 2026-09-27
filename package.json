@@ -7,7 +7,12 @@
     "dev": "turbo dev",
     "lint": "turbo lint",
     "format": "turbo format",
-    "typecheck": "turbo typecheck"
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "db:generate": "bun --filter @workspace/db generate",
+    "db:migrate": "bun --filter @workspace/db migrate:dev",
+    "db:deploy": "bun --filter @workspace/db migrate:deploy",
+    "db:seed": "bun --filter @workspace/db seed"
   },
   "devDependencies": {
     "@workspace/eslint-config": "workspace:*",
@@ -15,7 +20,7 @@
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "turbo": "^2.9.18",
-    "typescript": "^5"
+    "typescript": "^6.0.3"
   },
   "packageManager": "bun@1.4.2",
   "engines": {
