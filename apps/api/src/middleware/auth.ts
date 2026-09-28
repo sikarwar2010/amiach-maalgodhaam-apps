@@ -113,10 +113,44 @@ async function resolveUser(
         select: userSelect,
       })
       if (raced) return raced
+      const relinked = profile.emailVerified ? await relinkByEmail(db, clerkId, profile.email) : null
+      if (relinked) return relinked
       throw conflict("An account with this email already exists")
     }
     throw error
   }
+}
+
+/**
+ * A row can already hold this e-mail under a different Clerk id: inserted by hand in Postgres, or created
+ * under another Clerk instance (dev vs production keys issue different user ids). Clerk has verified the
+ * caller owns the address, so the row — role included — is handed to the caller's Clerk id.
+ */
+async function relinkByEmail(
+  db: AppEnv["Variables"]["db"],
+  clerkId: string,
+  email: string
+): Promise<CurrentUser | null> {
+  const existing = await db.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" }, status: { not: "DELETED" } },
+    select: { id: true, clerkId: true },
+  })
+  if (!existing) return null
+  return db.$transaction(async (tx) => {
+    const row = await tx.user.update({
+      where: { id: existing.id },
+      data: { clerkId, email },
+      select: userSelect,
+    })
+    await audit(tx, {
+      actor: null,
+      action: "user.relink_clerk_id",
+      entityType: "User",
+      entityId: existing.id,
+      metadata: { from: existing.clerkId },
+    })
+    return row
+  })
 }
 
 /** 401 when anonymous, 403 when the account is suspended. Narrows `c.get("user")` for handlers via `currentUser`. */

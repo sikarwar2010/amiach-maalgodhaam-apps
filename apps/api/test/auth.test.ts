@@ -252,4 +252,27 @@ describe("operator bootstrap (SUPER_ADMIN_EMAILS)", () => {
     await get("/api/me", "clerk_existing")
     expect((await db.user.findUniqueOrThrow({ where: { id: u.id } })).role).toBe("SUPER_ADMIN")
   })
+
+  test("a row pre-created in Postgres under another Clerk id is relinked on verified sign-in", async () => {
+    // e.g. inserted by hand, or created under a different Clerk instance (dev vs production keys)
+    const u = await db.user.create({
+      data: { clerkId: "manual_placeholder", email: "owner@example.com", role: "SUPER_ADMIN", onboarded: true },
+    })
+    knownProfiles.set("clerk_real", profile("owner@example.com", true))
+    const r = await get<{ role: string }>("/api/me", "clerk_real")
+    expect(r.status).toBe(200)
+    expect(r.body.data?.role).toBe("SUPER_ADMIN")
+    const row = await db.user.findUniqueOrThrow({ where: { id: u.id } })
+    expect(row.clerkId).toBe("clerk_real")
+    expect(await db.user.count()).toBe(1)
+  })
+
+  test("an UNVERIFIED e-mail cannot take over a pre-existing row", async () => {
+    await db.user.create({
+      data: { clerkId: "manual_placeholder", email: "owner@example.com", role: "SUPER_ADMIN", onboarded: true },
+    })
+    knownProfiles.set("clerk_fake", profile("owner@example.com", false))
+    expect((await get("/api/me", "clerk_fake")).status).toBe(409)
+    expect((await db.user.findFirstOrThrow()).clerkId).toBe("manual_placeholder")
+  })
 })
