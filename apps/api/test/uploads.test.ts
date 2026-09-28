@@ -46,6 +46,8 @@ describe("uploads", () => {
     expect(file.status).toBe(200)
     expect(file.headers.get("content-type")).toBe("image/png")
     expect(file.headers.get("x-content-type-options")).toBe("nosniff")
+    // The storefront (www.) embeds images served by the API (api.) — a different origin.
+    expect(file.headers.get("cross-origin-resource-policy")).toBe("cross-origin")
   })
 
   test("buyers cannot upload storefront images", async () => {

@@ -37,6 +37,26 @@ export type Env = Omit<z.infer<typeof envSchema>, "PUBLIC_API_URL"> & {
   webOrigins: string[]
 }
 
+/**
+ * Browsers send `Origin: https://host` and Clerk stamps the same bare value into the token's `azp`, and both
+ * are compared by exact string. A pasted `https://host/` would otherwise reject every CORS request and every
+ * signed-in session, so reduce each entry to its origin and refuse anything that is not one.
+ */
+function parseOrigins(raw: string): string[] {
+  const entries = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (entries.length === 0) throw new Error("Invalid environment: WEB_ORIGIN must list at least one origin")
+  return entries.map((entry) => {
+    const url = URL.parse(entry)
+    if (!url || (url.protocol !== "https:" && url.protocol !== "http:")) {
+      throw new Error(`Invalid environment: WEB_ORIGIN entry "${entry}" is not an http(s) origin like https://www.example.com`)
+    }
+    return url.origin
+  })
+}
+
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
   const parsed = envSchema.safeParse(source)
   if (!parsed.success) {
@@ -49,12 +69,10 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   }
   return {
     ...env,
-    PUBLIC_API_URL: env.PUBLIC_API_URL ?? `http://localhost:${env.API_PORT}`,
+    PUBLIC_API_URL: (env.PUBLIC_API_URL ?? `http://localhost:${env.API_PORT}`).replace(/\/+$/, ""),
     superAdminEmails: env.SUPER_ADMIN_EMAILS.split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
-    webOrigins: env.WEB_ORIGIN.split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
+    webOrigins: parseOrigins(env.WEB_ORIGIN),
   }
 }

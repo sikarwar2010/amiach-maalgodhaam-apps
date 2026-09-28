@@ -49,7 +49,13 @@ export function createApp(deps: AppDeps) {
     c.header("X-Request-Id", c.get("requestId"))
     await next()
   })
-  app.use("*", secureHeaders())
+  // secureHeaders() overwrites headers after the handler runs, so files served to the storefront (another
+  // origin: www. vs api.) must opt out of its `Cross-Origin-Resource-Policy: same-origin` or browsers block them.
+  const apiSecureHeaders = secureHeaders()
+  const fileSecureHeaders = secureHeaders({ crossOriginResourcePolicy: false })
+  app.use("*", (c, next) =>
+    c.req.path.startsWith("/api/files/") ? fileSecureHeaders(c, next) : apiSecureHeaders(c, next)
+  )
   app.use(
     "/api/*",
     cors({
