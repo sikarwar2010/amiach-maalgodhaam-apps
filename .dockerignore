@@ -12,5 +12,8 @@ packages/db/src/generated
 *.log
 .env
 .env.*
+# Nested env files too (apps/web/.env.local holds a Clerk secret key) — root-only patterns miss them.
+**/.env
+**/.env.*
 !.env.example
 !**/.env.example

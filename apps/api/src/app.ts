@@ -142,6 +142,13 @@ export function createApp(deps: AppDeps) {
               : "BAD_REQUEST"
       return c.json(failure(code, error.message || "Request failed"), error.status as 400)
     }
+    // Constraint races that slipped past a handler's own checks are client errors, not 500s.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return c.json(failure("CONFLICT", "This record already exists"), 409)
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return c.json(failure("NOT_FOUND", "Not found"), 404)
+    }
     // Never echo internals to the client; the request id lets support find the log line.
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       console.error(

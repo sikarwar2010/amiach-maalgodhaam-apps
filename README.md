@@ -42,9 +42,9 @@ explain that authentication is not configured. To enable sign-in:
 1. Create a Clerk application, enable **Email** and **Google**.
 2. Put `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` in both env files.
 3. Make yourself an admin: put your e-mail in `SUPER_ADMIN_EMAILS` (any environment, including production). You become
-   `SUPER_ADMIN` the first time you use the app while signed in with a **verified** address. Other admins: Clerk
-   Dashboard → Users → _(user)_ → **Public metadata** → `{ "role": "ADMIN" }` (or `STAFF`), or a super admin can
-   change roles in `/admin/users`. The API creates the local user row on the first authenticated request; Clerk
+   `SUPER_ADMIN` the first time you use the app while signed in with a **verified** address. Other admins: a super
+   admin changes their role in `/admin/users`. (Clerk **Public metadata** `{ "role": "ADMIN" }` is honoured only
+   when the user's database row is first created.) The API creates the local user row on the first authenticated request; Clerk
    webhooks are not required.
 
 ## Commands
